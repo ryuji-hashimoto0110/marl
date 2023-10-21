@@ -5,7 +5,7 @@ import numpy as np
 from numpy import ndarray
 from pathlib import Path
 from pettingzoo.utils.env import ParallelEnv
-from typing import Any, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Optional, TypeVar
 
 ObsType = TypeVar("ObsType")
 ActionType = TypeVar("ActionType")
@@ -26,7 +26,7 @@ class Trainer:
         actor_last_save_path: Optional[Path] = None,
         critic_best_save_path: Optional[Path] = None,
         critic_last_save_path: Optional[Path] = None,
-        other_indicators: List[str] = [],
+        other_indicators: list[str] = [],
         num_train_steps: int = int(1e+07),
         eval_interval: int = int(1e+05),
         num_eval_episodes: int = 10
@@ -42,7 +42,7 @@ class Trainer:
             actor_last_save_path (Path, optional): _description_. Defaults to None.
             critic_best_save_path (Path, optional): _description_. Defaults to None.
             critic_last_save_path (Path, optional): _description_. Defaults to None.
-            other_indicators (List[str]): _description_. Defaults to [],
+            other_indicators (list[str]): _description_. Defaults to [],
             num_train_steps (int, optional): _description_. Defaults to int(1e+07).
             eval_interval (int, optional): _description_. Defaults to int(1e+05).
             num_eval_episodes (int, optional): _description_. Defaults to 10.
@@ -57,14 +57,14 @@ class Trainer:
         self.actor_last_save_path: Optional[Path] = actor_last_save_path
         self.critic_best_save_path: Optional[Path] = critic_best_save_path
         self.critic_last_save_path: Optional[Path] = critic_last_save_path
-        self.other_indicators: List[str] = other_indicators
-        self.results_dic: Dict[str, List[float]] = self.set_results_dic(self.other_indicators)
+        self.other_indicators: list[str] = other_indicators
+        self.results_dic: dict[str, list[float]] = self.set_results_dic(self.other_indicators)
         self.num_train_steps: int = int(num_train_steps)
         self.eval_interval: int = int(eval_interval)
         self.num_eval_episodes: int = int(num_eval_episodes)
         self.best_reward: float = - 1e-10
 
-    def set_results_dic(self, other_indicators: List[str]) -> Dict[str, List[float]]:
+    def set_results_dic(self, other_indicators: list[str]) -> dict[str, list[float]]:
         """set initial results dictionary.
 
         Initialize results_dic.
@@ -72,14 +72,14 @@ class Trainer:
         Extend results_dic by adding other_indicators.
 
         Args:
-            other_indicators (List[str]): _description_
+            other_indicators (list[str]): _description_
 
         Returns:
-            results_dic (Dict[str, List[float]]): _description_
+            results_dic (dict[str, list[float]]): _description_
         """
-        results_dic = Dict[str, List[float]] = {"step": [], "total_reward": []}
+        results_dic = dict[str, list[float]] = {"step": [], "total_reward": []}
         for indicator in other_indicators:
-            results_dic[indicator]: List[float] = []
+            results_dic[indicator]: list[float] = []
         return results_dic
 
     def train(self) -> None:
@@ -90,7 +90,7 @@ class Trainer:
             for each of eval_interval training steps.
         """
         current_episode_steps: int = 0
-        obs: ObsType | Tuple[dict[AgentID, ObsType]] = self.train_env.reset()
+        obs: ObsType | tuple[dict[AgentID, ObsType]] = self.train_env.reset()
         for current_total_steps in range(1, self.num_train_steps+1):
             obs, current_episode_steps = \
                 self.algo.step(self.train_env, obs, current_episode_steps, current_total_steps)
@@ -109,13 +109,13 @@ class Trainer:
         Args:
             current_total_steps (int): _description_
         """
-        eval_rewards: List = []
+        eval_rewards: list = []
         for _ in range(self.num_eval_episodes):
-            obs: ObsType | Tuple[dict[AgentID, ObsType]] = self.test_env.reset()
+            obs: ObsType | tuple[dict[AgentID, ObsType]] = self.test_env.reset()
             done: bool = False
             episode_reward: float = 0.0
             while not done:
-                action: ActionType | Dict[AgentID, ActionType] = self.algo.exploit(obs)
+                action: ActionType | dict[AgentID, ActionType] = self.algo.exploit(obs)
                 obs, reward, done, info = self.step_env(self.test_env, action)
                 episode_reward += reward
             eval_rewards.append(episode_reward)
@@ -126,8 +126,8 @@ class Trainer:
 
     def step_env(
         self, env: Env | ParallelEnv,
-        action: ActionType | Dict[AgentID, ActionType]
-    ) -> Tuple[ObsType, float, bool]:
+        action: ActionType | dict[AgentID, ActionType]
+    ) -> tuple[ObsType, float, bool]:
         """_summary_
 
         Args:
@@ -135,7 +135,7 @@ class Trainer:
             action (ActionType): _description_
 
         Returns:
-            Tuple[ObsType, float, bool]: _description_
+            tuple[ObsType, float, bool]: _description_
         """
         if isinstance(env, ParallelEnv):
             obs, rewards, terminations, truncations, info = env.step(action)
@@ -151,14 +151,14 @@ class Trainer:
         self,
         current_total_steps: int,
         eval_average_reward: float,
-        info: Dict[str, Any] | Dict[AgentID, Dict[str, Any]]
+        info: dict[str, Any] | dict[AgentID, dict[str, Any]]
     ) -> None:
         """_summary_
 
         Args:
             current_total_steps (int): _description_
             eval_average_reward (float): _description_
-            info (Dict[str, Any] | Dict[AgentID, Dict[str, Any]]): _description_
+            info (dict[str, Any] | dict[AgentID, dict[str, Any]]): _description_
         """
         self.results_dic["step"].append(current_total_steps)
         self.results_dic["total_reward"].append(eval_average_reward)
