@@ -2,7 +2,6 @@ from algorithm import Algorithm
 import argparse
 from gym import Env
 import numpy as np
-from numpy import ndarray
 from pathlib import Path
 from pettingzoo.utils.env import ParallelEnv
 from typing import Any, Optional, TypeVar
