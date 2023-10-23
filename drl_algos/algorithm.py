@@ -11,7 +11,19 @@ ActionType = TypeVar("ActionType")
 AgentID = TypeVar("AgentID")
 
 class Algorithm(ABC):
-    """
+    """Algorithm class.
+
+    Any RL algorithms are implemented by inheriting from this "Algorithm" class.
+    RL algorithm must contains
+        self.actor (nn.Module)
+            .actor.forward(obs: Tensor | dict[AgentID, Tensor]) -> Tensor | dict[AgentID, Tensor]
+            .actor.sample(obs: Tensor | dict[AgentID, Tensor]) -> tuple[Tensor | dict[AgentID, Tensor], float | ndarray]
+    and often contains
+        self.critic (nn.Module)
+            .critic.forward(
+                obs: 
+                actions: 
+            ) -> 
     """
     @torch.no_grad()
     def explore(
