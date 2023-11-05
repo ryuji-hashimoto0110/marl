@@ -1,5 +1,6 @@
 import argparse
 from config import get_config
+import numpy as np
 from numpy import ndarray
 import pathlib
 from pathlib import Path
@@ -17,7 +18,7 @@ from environments.simple_spread import make_ep_spread_env
 
 def parse_args(args, parser):
     parser.add_argument("--num_agents", type=int, default=3)
-    parser.add_argument("--global_obs_type", type=str, default="EP", choices=["EP"])
+    parser.add_argument("--global_obs_type", type=str, default="EP", choices=["EP", "AS"])
     parser.add_argument("--num_nearest_agents", type=int, default=3,
                         help="number of nearest agents and landmarks that can be observed by each agent.")
     parser.add_argument("--local_ratio", type=float, default=0.5,
@@ -35,24 +36,29 @@ def main(args):
     num_nearest_agents: str = all_args.num_nearest_agents
     local_ratio: float = all_args.local_ratio
     max_cycles: int = all_args.max_cycles
+    print("===Simple Spread Environment.===")
+    train_env: ParallelEnv = make_ep_spread_env(
+        num_agents, num_nearest_agents, local_ratio, max_cycles
+    )
+    valid_env: ParallelEnv = make_ep_spread_env(
+        num_agents, num_nearest_agents, local_ratio, max_cycles
+    )
+    obs_shape: tuple[int] = train_env.observation_space("agent_0").shape
     if global_obs_type == "EP":
-        print("===Simple Spread Environment.===")
-        print("You are choosing to use environment provided global state (EP) as global observation.")
-        train_env: ParallelEnv = make_ep_spread_env(
-            num_agents, num_nearest_agents, local_ratio, max_cycles
-        )
-        valid_env: ParallelEnv = make_ep_spread_env(
-            num_agents, num_nearest_agents, local_ratio, max_cycles
-        )
-        obs_shape: ndarray = train_env.observation_space("agent_0").shape
-        global_obs_shape: ndarray = train_env.global_obs_shape.shape
-        action_shape: ndarray = train_env.action_space("agent_0").shape
-        print(f"number of agents={num_agents}, number of nearest agents and landmarks that can be observed={num_nearest_agents}")
-        print(f"local ratio={local_ratio}, max cycles={max_cycles}")
-        print(f"obs space shape={obs_shape}, global obs space shape={global_obs_shape}, action space shape={action_shape}")
+        global_obs_shape: tuple[int] = train_env.global_obs_shape.shape
+    elif global_obs_type == "AS":
+        global_obs_shape: tuple[int] = tuple(np.add(
+            train_env.global_obs_shape.shape, obs_shape
+        ))
+    action_shape: tuple[int] = train_env.action_space("agent_0").shape
+    print(f"number of agents={num_agents}, number of nearest agents and landmarks that can be observed={num_nearest_agents}")
+    print(f"local ratio={local_ratio}, max cycles={max_cycles}")
+    print(f"obs space shape={obs_shape}, global obs space shape={global_obs_shape}, action space shape={action_shape}")
+    print()
     algo_name: str = all_args.algo_name
     if algo_name == "mappo":
         print("You are choosing to use MAPPO with reccurent policy.")
+        print(f"you are choosing to use {global_obs_type} as global observation type.")
         hidden_size: int = all_args.hidden_size
         rollout_length: int = all_args.rollout_length
         num_updates_per_rollout: int = all_args.num_updates_per_rollout
@@ -68,6 +74,7 @@ def main(args):
         algo: Algorithm = MAPPO(
             obs_shape=obs_shape,
             global_obs_shape=global_obs_shape,
+            global_obs_type=global_obs_type,
             action_shape=action_shape,
             hidden_size=hidden_size,
             agent_ids=agent_ids,

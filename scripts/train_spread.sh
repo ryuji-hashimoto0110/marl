@@ -1,6 +1,6 @@
 seed_max=1
 num_agents=3
-global_obs_type="EP"
+global_obs_type="AS"
 num_nearest_agents=3
 local_ratio=0.5
 max_cycles=150
