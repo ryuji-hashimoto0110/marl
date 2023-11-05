@@ -1,9 +1,14 @@
 from algorithm import Algorithm
-import argparse
 from gym import Env
 import numpy as np
+import pathlib
 from pathlib import Path
+import sys
+curr_path: pathlib.Path = pathlib.Path(__file__).resolve()
+parent_path: pathlib.Path = curr_path.parents[0]
+sys.path.append(str(parent_path))
 from pettingzoo.utils.env import ParallelEnv
+import torch
 from typing import Any, Optional, TypeVar
 
 ObsType = TypeVar("ObsType")
@@ -23,8 +28,6 @@ class Trainer:
         seed: int = 1111,
         actor_best_save_path: Optional[Path] = None,
         actor_last_save_path: Optional[Path] = None,
-        critic_best_save_path: Optional[Path] = None,
-        critic_last_save_path: Optional[Path] = None,
         other_indicators: list[str] = [],
         num_train_steps: int = int(1e+07),
         eval_interval: int = int(1e+05),
@@ -39,8 +42,6 @@ class Trainer:
             seed (int, optional): _description_. Defaults to 1111.
             actor_best_save_path (Path, optional): _description_. Defaults to None.
             actor_last_save_path (Path, optional): _description_. Defaults to None.
-            critic_best_save_path (Path, optional): _description_. Defaults to None.
-            critic_last_save_path (Path, optional): _description_. Defaults to None.
             other_indicators (list[str]): _description_. Defaults to [],
             num_train_steps (int, optional): _description_. Defaults to int(1e+07).
             eval_interval (int, optional): _description_. Defaults to int(1e+05).
@@ -54,8 +55,6 @@ class Trainer:
         self.algo: Algorithm = algo
         self.actor_best_save_path: Optional[Path] = actor_best_save_path
         self.actor_last_save_path: Optional[Path] = actor_last_save_path
-        self.critic_best_save_path: Optional[Path] = critic_best_save_path
-        self.critic_last_save_path: Optional[Path] = critic_last_save_path
         self.other_indicators: list[str] = other_indicators
         self.results_dic: dict[str, list[float]] = self.set_results_dic(self.other_indicators)
         self.num_train_steps: int = int(num_train_steps)
@@ -76,7 +75,7 @@ class Trainer:
         Returns:
             results_dic (dict[str, list[float]]): _description_
         """
-        results_dic = dict[str, list[float]] = {"step": [], "total_reward": []}
+        results_dic: dict[str, list[float]] = {"step": [], "total_reward": []}
         for indicator in other_indicators:
             results_dic[indicator]: list[float] = []
         return results_dic
@@ -89,7 +88,9 @@ class Trainer:
             for each of eval_interval training steps.
         """
         current_episode_steps: int = 0
-        obs: ObsType | tuple[dict[AgentID, ObsType]] = self.train_env.reset()
+        obs: ObsType | tuple[dict[AgentID, ObsType], Any] = self.train_env.reset()
+        if isinstance(obs, tuple):
+            obs: dict[AgentID, ObsType] = obs[0]
         for current_total_steps in range(1, self.num_train_steps+1):
             obs, current_episode_steps = \
                 self.algo.step(self.train_env, obs, current_episode_steps, current_total_steps)
@@ -110,7 +111,7 @@ class Trainer:
         """
         eval_rewards: list = []
         for _ in range(self.num_eval_episodes):
-            obs: ObsType | tuple[dict[AgentID, ObsType]] = self.test_env.reset()
+            obs: ObsType | dict[AgentID, ObsType] = self.test_env.reset()
             done: bool = False
             episode_reward: float = 0.0
             while not done:
@@ -161,6 +162,7 @@ class Trainer:
         """
         self.results_dic["step"].append(current_total_steps)
         self.results_dic["total_reward"].append(eval_average_reward)
+        print(f"[step]{current_total_steps} [average total reward]{eval_average_reward}")
 
     def save_params(self, eval_average_reward: float) -> None:
         """_summary_
@@ -168,5 +170,18 @@ class Trainer:
         Args:
             eval_average_reward (float): _description_
         """
-        # parameter sharingの場合もあるから個別に実装する．
-        self.algo.save_params(self.best_reward, eval_average_reward)
+        if self.actor_best_save_path is None:
+            return
+        if eval_average_reward < self.best_reward:
+            save_path = self.actor_last_save_path
+        else:
+            self.best_reward = eval_average_reward
+            save_path = self.actor_best_save_path
+        torch.save(
+            {
+                "actor_state_dict": self.algo.actor.state_dict(),
+                "results_dic": self.results_dic
+            },
+            str(save_path)
+        )
+        print(f"model saved to >> {str(save_path)}")
