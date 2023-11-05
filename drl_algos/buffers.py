@@ -30,9 +30,9 @@ class RolloutBufferForMAPPO:
     def __init__(
         self,
         buffer_size: int,
-        obs_shape: ndarray,
-        global_obs_shape: ndarray,
-        action_shape: ndarray,
+        obs_shape: tuple[int],
+        global_obs_shape: tuple[int],
+        action_shape: tuple[int],
         hidden_size: int,
         agent_num: int,
         device: torch.device
@@ -47,9 +47,9 @@ class RolloutBufferForMAPPO:
             hidden_size (int): _description_
             agent_num (int): _description_
         """
-        self.obs_shape: ndarray = obs_shape
-        self.global_obs_shape: ndarray = global_obs_shape
-        self.action_shape: ndarray = action_shape
+        self.obs_shape: tuple[int] = obs_shape
+        self.global_obs_shape: tuple[int] = global_obs_shape
+        self.action_shape: tuple[int] = action_shape
         self.hidden_size: int = hidden_size
         self.next_idx: int = 0
         self.buffer_size: int = int(buffer_size)
@@ -60,7 +60,7 @@ class RolloutBufferForMAPPO:
             dtype=torch.float, device=device
         )
         self.global_obses: Tensor = torch.empty(
-            (self.buffer_size, *global_obs_shape),
+            (self.buffer_size, agent_num, *global_obs_shape),
             dtype=torch.float, device=device
         )
         self.hidden_states: Tensor = torch.empty(
@@ -85,21 +85,21 @@ class RolloutBufferForMAPPO:
             dtype=torch.float, device=device
         )
         self.next_global_obses: Tensor = torch.empty(
-            (self.buffer_size, *global_obs_shape),
+            (self.buffer_size, agent_num, *global_obs_shape),
             dtype=torch.float, device=device
         )
 
     def append(
         self,
         obs_dic: dict[AgentID, ObsType],
-        global_obs: ObsType,
+        global_obs_dic: dict[AgentID, ObsType],
         hidden_state_dic: dict[AgentID, Tensor],
         action_dic: dict[AgentID, ActionType],
         reward_dic: dict[AgentID, float],
         done_dic: dict[AgentID, bool],
         log_pi_dic: dict[AgentID, float],
         next_obs_dic: dict[AgentID, ObsType],
-        next_global_obs: ObsType
+        next_global_obs_dic: dict[AgentID, ObsType]
     ) -> None:
         """add one experience to the buffer.
 
@@ -113,13 +113,16 @@ class RolloutBufferForMAPPO:
             next_obs_dic (dict[AgentID, ObsType]): _description_
         """
         obs_dic: dict[AgentID, Tensor] = self.convert_obs2tensor(obs_dic)
-        global_obs: Tensor = self.convert_obs2tensor(global_obs)
+        global_obs_dic: dict[AgentID, Tensor] = self.convert_obs2tensor(global_obs_dic)
         action_dic: dict[AgentID, Tensor] = self.convert_action2tensor(action_dic)
         next_obs_dic: dict[AgentID, Tensor] = self.convert_obs2tensor(next_obs_dic)
-        next_global_obs: Tensor = self.convert_obs2tensor(next_global_obs)
+        next_global_obs_dic: dict[AgentID, Tensor] = self.convert_obs2tensor(next_global_obs_dic)
         for i, agent_id in enumerate(obs_dic.keys()):
             self.obses[self.next_idx, i].copy_(
                 obs_dic[agent_id].view(self.obs_shape)
+            )
+            self.global_obses[self.next_idx].copy_(
+                global_obs_dic[agent_id].view(self.global_obs_shape)
             )
             self.hidden_states[self.next_idx, i].copy_(
                 hidden_state_dic[agent_id].view(self.hidden_size)
@@ -133,12 +136,9 @@ class RolloutBufferForMAPPO:
             self.next_obses[self.next_idx, i].copy_(
                 next_obs_dic[agent_id].view(self.obs_shape)
             )
-        self.global_obses[self.next_idx].copy_(
-            global_obs.view(self.global_obs_shape)
-        )
-        self.next_global_obses[self.next_idx].copy_(
-            next_global_obs.view(self.global_obs_shape)
-        )
+            self.next_global_obses[self.next_idx].copy_(
+                next_global_obs_dic[agent_id].view(self.global_obs_shape)
+            )
         self.next_idx = (self.next_idx + 1) % self.buffer_size
 
     def convert_obs2tensor(
