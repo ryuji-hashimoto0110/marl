@@ -1,22 +1,18 @@
-# actorに人数分self.rnn_stateを保持して，
-# forwardの引数のrnn_states==Noneの場合はrnn_states=self.rnn_stateにして，出力されたrnn_stateを保持する．
-# bufferから取り出された場合はそれを使い，出力されたrnn_stateは保持しない．
-# 環境reset時は，initialize_rnn_stateするとか？
-
-# BPTTとhidden_stateのinitialization
-
 from abc import ABC, abstractmethod
+import pathlib
+from pathlib import Path
+import sys
+curr_path: pathlib.Path = pathlib.Path(__file__).resolve()
+parent_path: pathlib.Path = curr_path.parents[0]
+sys.path.append(str(parent_path))
 from buffers import RolloutBufferForMAPPO
 from algorithm import Algorithm
 from drl_utils import calc_log_pi
 from drl_utils import initialize_hidden_state_dic
 from drl_utils import initialize_module_orthogonal
 from drl_utils import reparametrize
-from gym import Env
 import numpy as np
 from numpy import ndarray
-import pathlib
-from pathlib import Path
 from pettingzoo.utils.env import ParallelEnv
 import torch
 from torch import nn
@@ -95,7 +91,7 @@ class MAPPOActor(Module):
                 obs_i.shape = (batch_size, *obs_shape).
             hidden_state_dic (Optional[dict[AgentID, Tensor]], optional): hidden state dictionary
                 whose key is agent ID and value is hidden state tensor, hidden_state_i.
-                hidden_state_i.shape = (batch_size, time_length, hidden_size).time_length must be 1. Defaults to None.
+                hidden_state_i.shape = (batch_size, time_length, hidden_size). time_length must be 1. Defaults to None.
 
         Returns:
             mean_dic (dict[AgentID, Tensor]): mean dictionary whose key is agent ID and value is mean of action distribution
@@ -106,10 +102,10 @@ class MAPPOActor(Module):
             hidden_state_dic: dict[AgentID, Tensor] = self.hidden_state_dic
             is_update_self_h = True
         mean_dic: dict[AgentID, Tensor] = {}
-        for agent_id, obs_i in obs_dic:
+        for agent_id, obs_i in obs_dic.items():
             obs_i: Tensor = obs_i.unsqueeze_(1)
             hidden_state_i: Tensor = hidden_state_dic[agent_id]
-            act_feature_i, hidden_state_i: tuple[Tensor] = self.rnnlayer(
+            act_feature_i, hidden_state_i = self.rnnlayer(
                 obs_i, hidden_state_i
             )
             if is_update_self_h:
@@ -132,7 +128,7 @@ class MAPPOActor(Module):
                 obs_i.shape = (batch_size, *obs_shape).
             hidden_state_dic (Optional[dict[AgentID, Tensor]], optional): hidden state dictionary
                 whose key is agent ID and value is hidden state tensor, hidden_state_i.
-                hidden_state_i.shape = (batch_size, time_length, hidden_size). Defaults to None.
+                hidden_state_i.shape = (batch_size, time_length, hidden_size). time_length must be 1. Defaults to None.
 
         Returns:
             action_dic (dict[AgentID, Tensor]): action dictionary whose key is agent ID and value is action tensor, action_i.
@@ -140,7 +136,7 @@ class MAPPOActor(Module):
         """
         mean_dic: dict[AgentID, Tensor] = self.calc_mean(obs_dic, hidden_state_dic)
         action_dic: dict[AgentID, Tensor] = {}
-        for agent_id, mean_i in mean_dic:
+        for agent_id, mean_i in mean_dic.items():
             action_i: Tensor = torch.tanh(mean_i).clamp(-0.999,0.999)
             action_dic[agent_id] = action_i
         return action_dic
@@ -161,22 +157,23 @@ class MAPPOActor(Module):
                 obs_i.shape = (batch_size, *obs_shape).
             hidden_state_dic (Optional[dict[AgentID, Tensor]], optional):
                 hidden state dictionary whose key is agent ID and value is hidden state tensor, hidden_state_i.
-                hidden_state_i.shape = (batch_size, time_length, hidden_size). Defaults to None.
+                hidden_state_i.shape = (batch_size, time_length, hidden_size). time_length must be 1. Defaults to None.
 
         Returns:
             action_dic (dict[AgentID, Tensor]): action dictionary whose key is agent ID and value is action tensor, action_i.
                 action_i.shape = (batch_size, *action_shape).
             log_pi_dic (dict[AgentID, Tensor]]):
-                log_pi dictionary whose key is agent ID and value is logarithmic density of current policy.
+                log_pi dictionary whose key is agent ID and value is logarithmic density of current policy, log_pi_i.
+                log_pi_i.shape = (batch_size, 1)
         """
         mean_dic: dict[AgentID, Tensor] = self.calc_mean(obs_dic, hidden_state_dic)
         action_dic: dict[AgentID, Tensor] = {}
         log_pi_dic: dict[AgentID, Tensor] = {}
-        for agent_id, mean_i in mean_dic:
-            action_i, log_pi: tuple[Tensor] = reparametrize(mean_i, self.log_std)
+        for agent_id, mean_i in mean_dic.items():
+            action_i, log_pi_i = reparametrize(mean_i, self.log_std)
             action_i = action_i.clamp(-0.999,0.999)
             action_dic[agent_id] = action_i
-            log_pi_dic[agent_id] = log_pi
+            log_pi_dic[agent_id] = log_pi_i
         return action_dic, log_pi_dic
 
     def calc_log_pi(
@@ -188,14 +185,17 @@ class MAPPOActor(Module):
         """calculate logarithmic probability of current policy.
 
         Args:
-            obses (Tensor): _description_
-            hidden_states (Tensor): _description_
-            actions (Tensor): _description_
+            obses (Tensor): observations. obses.shape = (batch_size, *obs_shape).
+            hidden_states (Tensor): hidden states.
+                hidden_states.shape = (batch_size, hidden_size).
+            actions (Tensor): actions. actions.shape = (batch_size, *action_shape)
 
         Returns:
-            Tensor: _description_
+            log_pis (Tensor): logarithmic densities of current policy. log_pis.shape = (batch_size, 1)
         """
-        act_features, hidden_states: tuple[Tensor] = self.rnnlayer(obses, hidden_states)
+        obses = obses.unsqueeze_(1)
+        hidden_states = hidden_states.unsqueeze_(0)
+        act_features, hidden_states = self.rnnlayer(obses, hidden_states)
         means: Tensor = self.actlayer(act_features[:,-1,:])
         noises: Tensor = (torch.atanh(actions) - means) / (self.log_std.exp() + 1e-08)
         log_pis: Tensor = calc_log_pi(self.log_std, noises, actions)
@@ -231,7 +231,7 @@ class MAPPOCritic(Module):
             nn.Tanh(),
             nn.Linear(256, 256),
             nn.Tanh(),
-            nn.Linear(64, 1)
+            nn.Linear(256, 1)
         )
         initialize_module_orthogonal(self.valuelayer)
 
@@ -242,10 +242,10 @@ class MAPPOCritic(Module):
         """forward method.
 
         Args:
-            global_obs (Tensor): global observation.
+            global_obs (Tensor): global observation. global_obs.shape = (batch_size, *global_obs_shape).
 
         Returns:
-            value (Tensor) : _description_
+            value (Tensor) : estimate of global observation value. value.shape = (batch_size, 1).
         """
         value: Tensor = self.valuelayer(global_obs)
         return value
@@ -255,14 +255,15 @@ class MAPPO(Algorithm):
     """
     def __init__(
         self,
-        obs_shape: ndarray,
-        global_obs_shape: ndarray,
-        action_shape: ndarray,
+        obs_shape: tuple[int],
+        global_obs_shape: tuple[int],
+        global_obs_type: str,
+        action_shape: tuple[int],
         hidden_size: int,
         agent_ids: list[AgentID],
         device: torch.device,
         seed: int = 1111,
-        rollout_length: int = 2048,
+        rollout_length: int = 3072,
         num_updates_per_rollout: int = 10,
         batch_size: int = 1024,
         gamma: float = 0.995,
@@ -277,6 +278,7 @@ class MAPPO(Algorithm):
         Args:
             obs_shape (ndarray): observation shape of each agent.
             global_obs_shape (ndarray): global observation shape.
+            global_obs_type (ndarray)
             action_shape (ndarray): action shape of each agent.
             hidden_size (int): dimension of hidden state of each agent.
             agent_ids (list[AgentID]):  list of agent IDs.
@@ -302,13 +304,18 @@ class MAPPO(Algorithm):
         super().__init__()
         np.random.seed(seed)
         torch.manual_seed(seed)
+        self.obs_shape: tuple[int] = obs_shape
+        self.global_obs_type: str = global_obs_type
+        self.action_shape: tuple[int] = action_shape
+        self.agent_num: int = len(agent_ids)
+        self.hidden_size: int = hidden_size
         self.buffer = RolloutBufferForMAPPO(
             buffer_size=rollout_length,
             obs_shape=obs_shape,
             global_obs_shape=global_obs_shape,
             action_shape=action_shape,
             hidden_size=hidden_size,
-            agent_ids=agent_ids,
+            agent_num=self.agent_num,
             device=device
         )
         self.actor = MAPPOActor(
@@ -320,7 +327,6 @@ class MAPPO(Algorithm):
         ).to(device)
         self.critic = MAPPOCritic(
             global_obs_shape=global_obs_shape,
-            hidden_size=hidden_size,
             device=device
         )
         self.optim_actor = optim.Adam(self.actor.parameters(),
@@ -338,14 +344,22 @@ class MAPPO(Algorithm):
         self.batch_size: int = batch_size
         self.device: torch.device = device
         self.gamma: float = gamma
-        self.rollout_length: int = num_updates_per_rollout
+        self.rollout_length: int = rollout_length
         self.num_updates_per_rollout: int = num_updates_per_rollout
         self.clip_eps: float = clip_eps
         self.lmd: float = lmd
         self.max_grad_norm: float = max_grad_norm
 
     def is_ready_to_update(self, current_total_steps: int) -> bool:
-        return current_total_steps % self.rollout_length == 0
+        """check if the algorithm is ready to update.
+
+        Args:
+            current_total_steps (int)
+
+        Returns:
+            (bool): whether if the buffer is filled with rollout.
+        """
+        return self.buffer.is_filled()
 
     def step(
         self,
@@ -354,71 +368,133 @@ class MAPPO(Algorithm):
         current_episode_steps: int,
         current_total_steps: int
     ) -> tuple[dict[AgentID, ObsType], int]:
+        """advance the envitonment 1 step.
+
+        Sample the action probabilistically from all actors,
+        obtain 1 step of experience from env environment,
+        and then store the experience to self.buffer.
+
+        Args:
+            env (ParallelEnv): environment.
+            obs_dic (dict[AgentID, ObsType]): observation dictionary
+                whose key is agent ID and value is observation, obs_i.
+                obs_i.shape = (*obs_shape).
+            current_episode_steps (int): number of steps in the current episode.
+            current_total_steps (int): number of steps in the current training phase as a whole.
+
+        Returns:
+            next_obs_dic (dict[AgentID, ObsType]): observation dictionary
+                obtained as a result of 1 step.
+            current_episode_steps (int): number of steps in the current episode.
+        """
         current_episode_steps += 1
+        global_obs: ObsType = env.state()
+        global_obs_dic: dict[AgentID, ObsType] = self.get_global_obs_dic(
+            obs_dic, global_obs
+        )
         hidden_state_dic: dict[AgentID, Tensor] = self.actor.hidden_state_dic
-        action_dic, log_pi_dic: tuple[dict[AgentID, ActionType], dict[AgentID, Tensor]] \
-            = self.explore(obs_dic)
-        next_obs_dic, reward_dic, done_dic, _, _: \
-            tuple[dict[AgentID, ObsType], dict[AgentID, float],
-                dict[AgentID, bool], dict[AgentID, bool],
-                dict[AgentID, Any]] = env.step(action_dic)
+        action_dic, log_pi_dic = self.explore(obs_dic)
+        next_obs_dic, reward_dic, done_dic, truncation_dic, _ = env.step(action_dic)
+        if sum(done_dic.values()) > 0 or sum(truncation_dic.values()) > 0:
+            for agent_id in done_dic.keys():
+                done_dic[agent_id] = True
+            current_episode_steps = 0
+            self.actor.initialize_h()
+            next_obs_dic, _ = env.reset()
+        next_global_obs: ObsType = env.state()
+        next_global_obs_dic: dict[AgentID, ObsType] = self.get_global_obs_dic(
+            next_obs_dic, next_global_obs
+        )
         self.buffer.append(
             obs_dic,
+            global_obs_dic,
             hidden_state_dic,
             action_dic,
             reward_dic,
             done_dic,
             log_pi_dic,
-            next_obs_dic
+            next_obs_dic,
+            next_global_obs_dic
         )
-        if sum(done_dic.values()) > 0:
-            current_episode_steps = 0
-            self.actor.initialize_h()
-            next_obs_dic: dict[AgentID, ObsType] = env.reset()
+        next_obs_dic: dict[AgentID, ObsType] = self.convert_tensor2obs(next_obs_dic)
         return next_obs_dic, current_episode_steps
 
     def convert_obs2tensor(
         self, obs_dic: dict[AgentID, ObsType]
     ) -> dict[AgentID, Tensor]:
-        """_summary_
+        """convert type ObsType to Tensor.
 
         Args:
-            obs (dict[AgentID, ObsType]): _description_
+            obs_dic (dict[AgentID, ObsType]): observation dictionary
+                whose key is agent ID and value is observation, obs_i.
+                obs_i.shape = (*obs_shape).
 
         Returns:
-            dict[AgentID, Tensor]: _description_
+            dict[AgentID, Tensor]: observation dictionary
+                whose key is agent ID and value is observation tensor, obs_i.
+                obs_i.shape = (1, *obs_shape).
         """
-        for agent_id, obs_i in obs_dic:
+        for agent_id, obs_i in obs_dic.items():
             obs_dic[agent_id]: Tensor = torch.tensor(
                 obs_i, dtype=torch.float, device=self.device
             ).unsqueeze_(0)
         return obs_dic
 
+    def convert_tensor2obs(
+        self, obs_dic: dict[AgentID, Tensor]
+    ) -> dict[AgentID, ObsType]:
+        for agent_id, obs_i in obs_dic.items():
+            obs_dic[agent_id]: ObsType = obs_i.detach().cpu().numpy()
+        return obs_dic
+
+    def get_global_obs_dic(
+        self,
+        obs_dic: dict[AgentID, ObsType],
+        global_obs: ObsType
+    ) -> dict[AgentID, ObsType]:
+        global_obs_dic: dict[AgentID, ObsType] = {}
+        for agent_id in obs_dic.keys():
+            if self.global_obs_type == "AS":
+                global_obs_i = np.concatenate(
+                    [global_obs, obs_dic[agent_id]]
+                )
+                global_obs_dic[agent_id] = global_obs_i
+            elif self.global_obs_type == "EP":
+                global_obs_dic[agent_id] = global_obs
+            else:
+                raise NotImplementedError(
+                    f"global observation type {self.global_obs_type} is not implemented."
+                )
+        return global_obs_dic
+
     def convert_tensor2action(
         self, action_dic: dict[AgentID, Tensor]
     ) -> dict[AgentID, ActionType]:
-        """_summary_
+        """convert type Tensor to ActionType.
 
         Args:
-            action_dic (dict[AgentID, Tensor]): _description_
+            action_dic (dict[AgentID, Tensor]): action dictionary
 
         Returns:
             dict[AgentID, ActionType]: _description_
         """
-        for agent_id, action_i in action_dic:
+        for agent_id, action_i in action_dic.items():
             action_dic[agent_id]: ActionType = action_i.detach().cpu().numpy()[0]
         return action_dic
 
     def update(self) -> None:
-        """_summary_
+        """update actor and critic.
+
+        Get the rollout from self.buffer and update actor and critic using the rollout.
+        Target observation value R(lmd) and GAE is calculated in advance.
+        The rollout is divided into mini-batches and processes in sequence.
         """
         obses, global_obses, hidden_states, actions, rewards, dones, \
-            log_pis_old, next_obses, next_global_obses: \
-            tuple[Tensor] = self.buffer_get()
+            log_pis_old, next_obses, next_global_obses = self.buffer.get()
         with torch.no_grad():
             values: Tensor = self.critic(global_obses)
             next_values: Tensor = self.critic(next_global_obses)
-        targets, advantages: tuple[Tensor] = self.calc_gae(
+        targets, advantages = self.calc_gae(
             values, rewards, dones, next_values
         )
         for _ in range(self.num_updates_per_rollout):
@@ -438,3 +514,85 @@ class MAPPO(Algorithm):
                 )
                 self.scheduler_actor.step()
                 self.scheduler_critic.step()
+
+    def calc_gae(
+        self,
+        values: Tensor,
+        rewards: Tensor,
+        dones: Tensor,
+        next_values: Tensor
+    ) -> tuple[Tensor]:
+        """_summary_
+
+        Args:
+            values (Tensor): value calculated by critic. (rollout_length, num_agents. 1)
+            rewards (Tensor): (rollout_length, num_agents, 1)
+            dones (Tensor): whether the episode ended. (rollout_length, num_agents, 1)
+            next_values (Tensor): next value calculated by critic. (rollout_length, num_agents, 1)
+
+        Returns:
+            targets (Tensor): 
+            advantages (Tensor):
+        """
+        td_err: Tensor = rewards + self.gamma * next_values * (1-dones) - values
+        advantages: Tensor = torch.empty_like(rewards)
+        advantages[-1] = td_err[-1]
+        for t in reversed(range(len(rewards)-1)):
+            advantages[t] = td_err[t] + self.gamma * self.lmd * (1-dones[t]) * advantages[t+1]
+        targets: Tensor = advantages + values
+        advantages = advantages / (advantages.std() + 1e-10)
+        return targets, advantages
+
+    def update_critic(
+        self,
+        global_obses: Tensor,
+        targets: Tensor
+    ) -> None:
+        """_summary_
+
+        Args:
+            global_obses (Tensor): global observations. (batch_size, global_obs_shape)
+            targets (Tensor): value targets. (batch_size, num_agents, 1)
+        """
+        preds: Tensor = self.critic(global_obses).unsqueeze_(1)
+        loss_critic: Tensor = (preds - targets).pow_(2).mean()
+        self.optim_critic.zero_grad()
+        loss_critic.backward()
+        nn.utils.clip_grad_norm_(self.critic.parameters(), self.max_grad_norm)
+        self.optim_critic.step()
+
+    def update_actor(
+        self,
+        obses: Tensor,
+        hidden_states: Tensor,
+        actions: Tensor,
+        log_pis_old: Tensor,
+        advantages: Tensor
+    ) -> None:
+        """_summary_
+
+        Args:
+            obses (Tensor): observations of all agents. (batch_size, num_agents, obs_shape)
+            hidden_states (Tensor): hidden states of all agents. (batch_size, num_agents, hidden_states)
+            actions (Tensor): actions of all agents. (batch_size, num_agents, action_shape)
+            log_pis_old (Tensor): log pi of all agents. (batch_size, num_agents, 1)
+            advantages (Tensor): estimated advantages of all agents. (batch_size, num_agents, 1)
+        """
+        obses = obses.view(-1, *self.obs_shape)
+        hidden_states = hidden_states.view(-1, self.hidden_size)
+        actions = actions.view(-1, *self.action_shape)
+        log_pis_old = log_pis_old.view(-1, 1)
+        advantages = advantages.view(-1, 1)
+        log_pis_now: Tensor = self.actor.calc_log_pi(obses, hidden_states, actions)
+        importance_ratio: Tensor = (log_pis_now - log_pis_old).exp_()
+        loss_actor1: Tensor = - importance_ratio * advantages
+        loss_actor2: Tensor = -torch.clamp(
+            importance_ratio,
+            1.0 - self.clip_eps,
+            1.0 + self.clip_eps
+        ) * advantages
+        loss_actor: Tensor = torch.max(loss_actor1, loss_actor2).mean()
+        self.optim_actor.zero_grad()
+        loss_actor.backward()
+        nn.utils.clip_grad_norm_(self.actor.parameters(), self.max_grad_norm)
+        self.optim_actor.step()
