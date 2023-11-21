@@ -1,5 +1,5 @@
 import argparse
-from config import get_config
+from config import get_config_train
 import numpy as np
 from numpy import ndarray
 import pathlib
@@ -19,8 +19,10 @@ from environments.simple_spread import make_ep_spread_env
 def parse_args(args, parser):
     parser.add_argument("--num_agents", type=int, default=3)
     parser.add_argument("--global_obs_type", type=str, default="EP", choices=["EP", "AS"])
-    parser.add_argument("--num_nearest_agents", type=int, default=3,
-                        help="number of nearest agents and landmarks that can be observed by each agent.")
+    parser.add_argument("--num_nearest_agents", type=int, default=2,
+                        help="number of nearest agents that can be observed by each agent.")
+    parser.add_argument("--num_nearest_landmarks", type=int, default=3,
+                        help="number of nearest landmarks that can be observed by each agent.")
     parser.add_argument("--local_ratio", type=float, default=0.5,
                         help="ratio of local reward to global reward.")
     parser.add_argument("--max_cycles", type=int, default=150,
@@ -29,19 +31,20 @@ def parse_args(args, parser):
     return all_args
 
 def main(args):
-    parser = get_config()
+    parser = get_config_train()
     all_args = parse_args(args, parser)
     num_agents: int = all_args.num_agents
     global_obs_type: str = all_args.global_obs_type
-    num_nearest_agents: str = all_args.num_nearest_agents
+    num_nearest_agents: int = all_args.num_nearest_agents
+    num_nearest_landmarks: int = all_args.num_nearest_landmarks
     local_ratio: float = all_args.local_ratio
     max_cycles: int = all_args.max_cycles
     print("===Simple Spread Environment.===")
     train_env: ParallelEnv = make_ep_spread_env(
-        num_agents, num_nearest_agents, local_ratio, max_cycles
+        num_agents, num_nearest_agents, num_nearest_landmarks, local_ratio, max_cycles
     )
     valid_env: ParallelEnv = make_ep_spread_env(
-        num_agents, num_nearest_agents, local_ratio, max_cycles
+        num_agents, num_nearest_agents, num_nearest_landmarks, local_ratio, max_cycles
     )
     obs_shape: tuple[int] = train_env.observation_space("agent_0").shape
     if global_obs_type == "EP":
@@ -94,6 +97,7 @@ def main(args):
         print(f"rollout length={rollout_length}, number of times to update per 1 rollout={num_updates_per_rollout}, batch size={batch_size}")
         print(f"discount rate={gamma}, learning rate actor={lr_actor}, critic={lr_critic}")
         print(f"threshold to clip importance_ratio={clip_eps}, lambda in GAE={lmd}, max gradient norm={max_grad_norm}")
+        print()
     seed: int = all_args.seed
     actor_best_save_name: Optional[str] = all_args.actor_best_save_name
     actor_last_save_name: Optional[str] = all_args.actor_last_save_name
@@ -123,6 +127,12 @@ def main(args):
         eval_interval=eval_interval,
         num_eval_episodes=num_eval_episodes
     )
+    print(f"seed={seed}")
+    print(f"actor best save path={actor_best_save_path}, actor last save path={actor_last_save_path}")
+    print(f"number of train steps={num_train_steps}")
+    print(f"evaluation interval={eval_interval}")
+    print(f"number of evaluation episodes={num_eval_episodes}")
+    print()
     trainer.train()
 
 if __name__ == "__main__":
