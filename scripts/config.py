@@ -1,6 +1,6 @@
 import argparse
 
-def get_config():
+def get_config_train():
     parser = argparse.ArgumentParser()
     parser.add_argument("--algo_name", type=str, default="mappo",
                         choices=["mappo"])
@@ -20,4 +20,18 @@ def get_config():
     parser.add_argument("--num_train_steps", type=int, default=int(1e+07))
     parser.add_argument("--eval_interval", type=int, default=int(1e+05))
     parser.add_argument("--num_eval_episodes", type=int, default=10)
+    return parser
+
+def get_config_eval():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--algo_name", type=str, default="mappo",
+                        choices=["mappo"])
+    parser.add_argument("--hidden_size", type=int, default=64)
+    parser.add_argument("--seed", type=int, default=2)
+    parser.add_argument("--actor_load_name", type=str, required=False)
+    parser.add_argument("--video_name", type=str, required=False)
+    parser.add_argument("--video_width", type=int, default=256)
+    parser.add_argument("--video_height", type=int, default=256)
+    parser.add_argument("--fps", type=int, default=256)
+    parser.add_argument("--reward_font_size", type=int, default=20)
     return parser
