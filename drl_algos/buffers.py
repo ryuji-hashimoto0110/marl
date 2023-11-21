@@ -196,12 +196,13 @@ class RolloutBufferForMAPPO:
         Returns:
             tuple[Tensor]: _description_
         """
+        rewards: Tensor = self.rewards / (self.rewards.std() + 1e-10)
         return (
             self.obses,
             self.global_obses,
             self.hidden_states,
             self.actions,
-            self.rewards,
+            rewards,
             self.dones,
             self.log_pis,
             self.next_obses,

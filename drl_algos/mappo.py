@@ -19,7 +19,7 @@ from torch import nn
 from torch import optim
 from torch import Tensor
 from torch.nn import Module
-from typing import Any, Optional, TypeVar
+from typing import Optional, TypeVar
 
 ObsType = TypeVar("ObsType")
 ActionType = TypeVar("ActionType")
@@ -61,11 +61,11 @@ class MAPPOActor(Module):
         initialize_module_orthogonal(self.rnnlayer)
         self.initialize_h()
         self.actlayer: Module = nn.Sequential(
-            nn.Linear(hidden_size, 64),
+            nn.Linear(hidden_size, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
             nn.Tanh(),
-            nn.Linear(64, action_shape[0])
+            nn.Linear(128, action_shape[0])
         )
         initialize_module_orthogonal(self.actlayer)
         self.log_std: Tensor = nn.Parameter(torch.zeros(1, action_shape[0]))
@@ -99,7 +99,7 @@ class MAPPOActor(Module):
         """
         is_update_self_h: bool = False
         if hidden_state_dic is None:
-            hidden_state_dic: dict[AgentID, Tensor] = self.hidden_state_dic
+            hidden_state_dic: dict[AgentID, Tensor] = self.hidden_state_dic.copy()
             is_update_self_h = True
         mean_dic: dict[AgentID, Tensor] = {}
         for agent_id, obs_i in obs_dic.items():
@@ -266,11 +266,11 @@ class MAPPO(Algorithm):
         rollout_length: int = 3072,
         num_updates_per_rollout: int = 10,
         batch_size: int = 1024,
-        gamma: float = 0.995,
+        gamma: float = 0.99,
         lr_actor: float = 5e-04,
-        lr_critic: float = 1e-03,
+        lr_critic: float = 5e-04,
         clip_eps: float = 0.2,
-        lmd: float = 0.97,
+        lmd: float = 0.95,
         max_grad_norm: float = 0.5
     ) -> None:
         """_summary_
@@ -278,7 +278,7 @@ class MAPPO(Algorithm):
         Args:
             obs_shape (ndarray): observation shape of each agent.
             global_obs_shape (ndarray): global observation shape.
-            global_obs_type (ndarray)
+            global_obs_type (str): global observation type.
             action_shape (ndarray): action shape of each agent.
             hidden_size (int): dimension of hidden state of each agent.
             agent_ids (list[AgentID]):  list of agent IDs.
@@ -339,7 +339,7 @@ class MAPPO(Algorithm):
                                     lr=lr_critic)
         self.scheduler_critic = optim.lr_scheduler.LambdaLR(
             self.optim_critic,
-            lr_lambda=lambda epoch: max(2e-05 / lr_critic, 0.995**(epoch // 50))
+            lr_lambda=lambda epoch: max(1e-05 / lr_critic, 0.995**(epoch // 50))
         )
         self.batch_size: int = batch_size
         self.device: torch.device = device

@@ -60,7 +60,7 @@ class Trainer:
         self.num_train_steps: int = int(num_train_steps)
         self.eval_interval: int = int(eval_interval)
         self.num_eval_episodes: int = int(num_eval_episodes)
-        self.best_reward: float = - 1e-10
+        self.best_reward: float = -1e+10
 
     def set_results_dic(self, other_indicators: list[str]) -> dict[str, list[float]]:
         """set initial results dictionary.
@@ -111,7 +111,9 @@ class Trainer:
         """
         eval_rewards: list = []
         for _ in range(self.num_eval_episodes):
-            obs: ObsType | dict[AgentID, ObsType] = self.test_env.reset()
+            obs: ObsType | tuple[dict[AgentID, ObsType], Any] = self.test_env.reset()
+            if isinstance(obs, tuple):
+                obs: dict[AgentID, ObsType] = obs[0]
             done: bool = False
             episode_reward: float = 0.0
             while not done:
@@ -139,7 +141,7 @@ class Trainer:
         """
         if isinstance(env, ParallelEnv):
             obs, rewards, terminations, truncations, info = env.step(action)
-            reward: float = sum(rewards.values) / len(rewards.values)
+            reward: float = sum(rewards.values()) / len(rewards.values())
             done: bool = False
             if sum(terminations.values()) > 0 or sum(truncations.values()) > 0:
                 done = True
@@ -162,7 +164,7 @@ class Trainer:
         """
         self.results_dic["step"].append(current_total_steps)
         self.results_dic["total_reward"].append(eval_average_reward)
-        print(f"[step]{current_total_steps} [average total reward]{eval_average_reward}")
+        print(f"[step]{current_total_steps}/{self.num_train_steps} [average total reward]{eval_average_reward:.2f}")
 
     def save_params(self, eval_average_reward: float) -> None:
         """_summary_
