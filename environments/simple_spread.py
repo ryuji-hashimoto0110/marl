@@ -23,15 +23,21 @@ class LimitLocalObsSimpleSpreadEnv(BaseParallelWrapper):
     def __init__(
         self,
         env: ParallelEnv,
-        num_nearest: int,
+        num_nearest_agents: int,
+        num_nearest_landmarks: int,
         num_agents: int
     ):
         BaseParallelWrapper.__init__(self, env)
-        self.n: int = num_nearest
+        self.n_agents: int = num_nearest_agents
+        self.n_landmarks: int = num_nearest_landmarks
         self.N: int = num_agents
-        if self.N < self.n:
+        if self.N < self.n_agents:
             raise ValueError(
-                f"num_nearest is greater than num_agent ({self.N}<{self.n})"
+                f"num_nearest_agents is greater than num_agent ({self.N}<{self.n_agents})"
+            )
+        if self.N < self.n_landmarks:
+            raise ValueError(
+                f"num_nearest_agents is greater than num_agent ({self.N}<{self.n_landmarks})"
             )
 
     def observation_space(
@@ -50,14 +56,17 @@ class LimitLocalObsSimpleSpreadEnv(BaseParallelWrapper):
         This wrapper prune the observation to:
             - physical velocity of the agent. (dim=2)
             - physical position (coordinate) of the agent. (dim=2)
-            - relative position of nearest n landmarks from the agent. (dim=2*n)
-            - relative position of nearest n agents from the agent. (dim=2*n)
-        As a result, observation space of each agent becomes Box(-inf, inf, (4*(n+1),), float32)
+            - relative position of nearest n landmarks from the agent. (dim=2*n_landmarks)
+            - relative position of nearest n agents from the agent. (dim=2*n_agents)
 
         Args:
             agent (AgentID): _description_
         """
-        return Box(-inf, inf, shape=(4*(self.n+1),), dtype=np.float32)
+        return Box(
+            -inf, inf,
+            shape=(2*(2 + self.n_landmarks + self.n_agents),),
+            dtype=np.float32
+        )
 
     def reset(self, **kwargs) -> tuple[dict[AgentID, ObsType], dict]:
         obs_dic, info_dic = super().reset(**kwargs)
@@ -88,9 +97,9 @@ class LimitLocalObsSimpleSpreadEnv(BaseParallelWrapper):
         vel: ObsType = obs[:2]
         pos: ObsType = obs[2:4]
         landmarks_idx: int = 4
-        pos_near_landmarks: ObsType = obs[landmarks_idx:landmarks_idx+2*self.n]
+        pos_near_landmarks: ObsType = obs[landmarks_idx:landmarks_idx+2*self.n_landmarks]
         agents_idx: int = 4+2*(self.N)
-        pos_near_agents: ObsType = obs[agents_idx:agents_idx+2*self.n]
+        pos_near_agents: ObsType = obs[agents_idx:agents_idx+2*self.n_agents]
         obs: ObsType = np.concatenate(
             [vel, pos, pos_near_landmarks, pos_near_agents]
         )
@@ -154,16 +163,20 @@ class EPSimpleSpreadEnv(BaseParallelWrapper):
 
 def make_ep_spread_env(
     num_agents: int,
-    num_nearest: int,
+    num_nearest_agents: int,
+    num_nearest_landmarks: int,
     local_ratio: float = 0.5,
-    max_cycles: int = 15
+    max_cycles: int = 15,
+    is_continuous_action: bool = True
 ) -> None:
     env: ParallelEnv = simple_spread_v3.parallel_env(render_mode="rgb_array",
                                                     N=num_agents,
                                                     local_ratio=local_ratio,
                                                     max_cycles=max_cycles,
-                                                    continuous_actions=True)
-    env = LimitLocalObsSimpleSpreadEnv(env, num_nearest, num_agents)
+                                                    continuous_actions=is_continuous_action)
+    env = LimitLocalObsSimpleSpreadEnv(
+        env, num_nearest_agents, num_nearest_landmarks, num_agents
+    )
     env = ModifyActionEnv(env)
     env = EPSimpleSpreadEnv(env, num_agents)
     return env
